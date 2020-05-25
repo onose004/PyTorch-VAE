@@ -9,6 +9,7 @@ from torchvision import transforms
 import torchvision.utils as vutils
 from torchvision.datasets import CelebA
 from torchvision.datasets import CIFAR10
+from torchvision.datasets import MNIST
 from torch.utils.data import DataLoader
 
 
@@ -147,6 +148,14 @@ class VAEXperiment(pl.LightningModule):
                              train=True,
                              transform=transform,
                              download=False)
+        elif self.params['dataset'] == 'MNIST':
+            dataset = MNIST(root = self.params['data_path'],
+                             train=True,
+                             transform=transform,
+                             download=False)
+            idx = (dataset.targets == 3) | (dataset.targets == 5) | (dataset.targets == 8)
+            dataset.targets = dataset.targets[idx]
+            dataset.data = dataset.data[idx]
 
         else:
             raise ValueError('Undefined dataset type')
@@ -179,6 +188,19 @@ class VAEXperiment(pl.LightningModule):
                                                  shuffle = True,
                                                  drop_last=True)
             self.num_val_imgs = len(self.sample_dataloader)
+        elif self.params['dataset'] == 'MNIST':
+            dataset = MNIST(root = self.params['data_path'],
+                    train=False,
+                    transform=transform,
+                    download=False)
+            idx = (dataset.targets == 3) | (dataset.targets == 5 ) | (dataset.targets == 8) | (dataset.targets == 1)
+            dataset.targets = dataset.targets[idx]
+            dataset.data = dataset.data[idx]
+            self.sample_dataloader =  DataLoader(dataset,
+                                                 batch_size= 144,
+                                                 shuffle = True,
+                                                 drop_last=True)
+            self.num_val_imgs = len(self.sample_dataloader)
         else:
             raise ValueError('Undefined dataset type')
 
@@ -198,6 +220,10 @@ class VAEXperiment(pl.LightningModule):
         elif self.params['dataset'] == 'CIFAR10':
             transform = transforms.Compose([transforms.RandomHorizontalFlip(),
                                             transforms.Resize(self.params['img_size']),
+                                            transforms.ToTensor(),
+                                            SetRange])
+        elif self.params['dataset'] == 'MNIST':
+            transform = transforms.Compose([transforms.Resize(self.params['img_size']),
                                             transforms.ToTensor(),
                                             SetRange])
         else:
