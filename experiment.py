@@ -8,6 +8,7 @@ import pytorch_lightning as pl
 from torchvision import transforms
 import torchvision.utils as vutils
 from torchvision.datasets import CelebA
+from torchvision.datasets import CIFAR10
 from torch.utils.data import DataLoader
 
 
@@ -140,7 +141,13 @@ class VAEXperiment(pl.LightningModule):
             dataset = CelebA(root = self.params['data_path'],
                              split = "train",
                              transform=transform,
+                             download=True)
+        elif self.params['dataset'] == 'CIFAR10':
+            dataset = CIFAR10(root = self.params['data_path'],
+                             train=True,
+                             transform=transform,
                              download=False)
+
         else:
             raise ValueError('Undefined dataset type')
 
@@ -163,6 +170,15 @@ class VAEXperiment(pl.LightningModule):
                                                  shuffle = True,
                                                  drop_last=True)
             self.num_val_imgs = len(self.sample_dataloader)
+        elif self.params['dataset'] == 'CIFAR10':
+            self.sample_dataloader =  DataLoader(CIFAR10(root = self.params['data_path'],
+                                                        train=False,
+                                                        transform=transform,
+                                                        download=False),
+                                                 batch_size= 144,
+                                                 shuffle = True,
+                                                 drop_last=True)
+            self.num_val_imgs = len(self.sample_dataloader)
         else:
             raise ValueError('Undefined dataset type')
 
@@ -176,6 +192,11 @@ class VAEXperiment(pl.LightningModule):
         if self.params['dataset'] == 'celeba':
             transform = transforms.Compose([transforms.RandomHorizontalFlip(),
                                             transforms.CenterCrop(148),
+                                            transforms.Resize(self.params['img_size']),
+                                            transforms.ToTensor(),
+                                            SetRange])
+        elif self.params['dataset'] == 'CIFAR10':
+            transform = transforms.Compose([transforms.RandomHorizontalFlip(),
                                             transforms.Resize(self.params['img_size']),
                                             transforms.ToTensor(),
                                             SetRange])
