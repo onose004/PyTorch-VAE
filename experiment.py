@@ -12,6 +12,8 @@ from torchvision.datasets import CIFAR10
 from torchvision.datasets import MNIST
 from torch.utils.data import DataLoader
 
+import numpy as np
+
 
 class VAEXperiment(pl.LightningModule):
 
@@ -70,11 +72,23 @@ class VAEXperiment(pl.LightningModule):
         test_input = test_input.to(self.curr_device)
         test_label = test_label.to(self.curr_device)
         recons = self.model.generate(test_input, labels = test_label)
-        vutils.save_image(recons.data,
-                          f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
-                          f"recons_{self.logger.name}_{self.current_epoch}.png",
-                          normalize=True,
-                          nrow=12)
+
+
+        torch.save(test_label, f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
+                  f"{self.logger.name}_{self.current_epoch}_label.pt")            
+        torch.save(recons.data, f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
+                f"recons_{self.logger.name}_{self.current_epoch}_data.pt")      
+        try:                                                                    
+            torch.save(                                                         
+                    np.array(test_input.data.cpu().data), f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
+                    f"real_img_{self.logger.name}_{self.current_epoch}_data.pt")
+        except:                                                                 
+            pass
+        # vutils.save_image(recons.data,
+        #                   f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
+        #                   f"recons_{self.logger.name}_{self.current_epoch}.png",
+        #                   normalize=True,
+        #                   nrow=12)
 
         # vutils.save_image(test_input.data,
         #                   f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
@@ -82,17 +96,17 @@ class VAEXperiment(pl.LightningModule):
         #                   normalize=True,
         #                   nrow=12)
 
-        try:
-            samples = self.model.sample(144,
-                                        self.curr_device,
-                                        labels = test_label)
-            vutils.save_image(samples.cpu().data,
-                              f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
-                              f"{self.logger.name}_{self.current_epoch}.png",
-                              normalize=True,
-                              nrow=12)
-        except:
-            pass
+        # try:
+        #     samples = self.model.sample(144,
+        #                                 self.curr_device,
+        #                                 labels = test_label)
+        #     vutils.save_image(samples.cpu().data,
+        #                       f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
+        #                       f"{self.logger.name}_{self.current_epoch}.png",
+        #                       normalize=True,
+        #                       nrow=12)
+        # except:
+        #     pass
 
 
         del test_input, recons #, samples
@@ -156,7 +170,11 @@ class VAEXperiment(pl.LightningModule):
             idx = (dataset.targets == 3) | (dataset.targets == 5) | (dataset.targets == 8)
             dataset.targets = dataset.targets[idx]
             dataset.data = dataset.data[idx]
-
+        elif self.params['dataset'] == 'VOL':
+            vol_np = np.load("/Users/ronose/Documents/Lab/Repo/pmat-generator-toolkit/tests/test_volume.npy")
+            data = torch.from_numpy(vol_np).float()
+            targets = torch.ones(len(data))
+            dataset = torch.utils.data.TensorDataset(data, targets)
         else:
             raise ValueError('Undefined dataset type')
 
@@ -201,6 +219,16 @@ class VAEXperiment(pl.LightningModule):
                                                  shuffle = True,
                                                  drop_last=True)
             self.num_val_imgs = len(self.sample_dataloader)
+        elif self.params['dataset'] == 'VOL':
+            vol_np = np.load("/Users/ronose/Documents/Lab/Repo/pmat-generator-toolkit/tests/test_volume.npy")
+            data = torch.from_numpy(vol_np).float()
+            targets = torch.ones(len(data))
+            dataset = torch.utils.data.TensorDataset(data, targets)
+            self.sample_dataloader =  DataLoader(dataset,
+                                                 batch_size= 144,
+                                                 shuffle = True,
+                                                 drop_last=True)
+            self.num_val_imgs = len(self.sample_dataloader)
         else:
             raise ValueError('Undefined dataset type')
 
@@ -226,6 +254,8 @@ class VAEXperiment(pl.LightningModule):
             transform = transforms.Compose([transforms.Resize(self.params['img_size']),
                                             transforms.ToTensor(),
                                             SetRange])
+        elif self.params['dataset'] == 'VOL':
+            transform = transforms.Compose([SetRange])
         else:
             raise ValueError('Undefined dataset type')
         return transform
