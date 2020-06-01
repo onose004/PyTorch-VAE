@@ -13,6 +13,7 @@ from torchvision.datasets import MNIST
 from torch.utils.data import DataLoader
 
 import numpy as np
+import os
 
 
 class VAEXperiment(pl.LightningModule):
@@ -175,6 +176,11 @@ class VAEXperiment(pl.LightningModule):
             data = torch.from_numpy(vol_np).float()
             targets = torch.ones(len(data))
             dataset = torch.utils.data.TensorDataset(data, targets)
+        elif self.params['dataset'] == 'MNISTB':
+            vol_np = np.load(os.path.join(self.params['data_path']))
+            data = torch.from_numpy(vol_np).float()
+            targets = torch.ones(len(data))
+            dataset = torch.utils.data.TensorDataset(data, targets)
         else:
             raise ValueError('Undefined dataset type')
 
@@ -229,6 +235,16 @@ class VAEXperiment(pl.LightningModule):
                                                  shuffle = True,
                                                  drop_last=True)
             self.num_val_imgs = len(self.sample_dataloader)
+        elif self.params['dataset'] == 'MNISTB':
+            vol_np = np.load(os.path.join(self.params['data_path']))
+            data = torch.from_numpy(vol_np).float()
+            targets = torch.ones(len(data))
+            dataset = torch.utils.data.TensorDataset(data, targets)
+            self.sample_dataloader =  DataLoader(dataset,
+                                                 batch_size= 144,
+                                                 shuffle = True,
+                                                 drop_last=True)
+            self.num_val_imgs = len(self.sample_dataloader)
         else:
             raise ValueError('Undefined dataset type')
 
@@ -255,6 +271,8 @@ class VAEXperiment(pl.LightningModule):
                                             transforms.ToTensor(),
                                             SetRange])
         elif self.params['dataset'] == 'VOL':
+            transform = transforms.Compose([SetRange])
+        elif self.params['dataset'] == 'MNISTB':
             transform = transforms.Compose([SetRange])
         else:
             raise ValueError('Undefined dataset type')

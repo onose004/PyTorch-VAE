@@ -21,6 +21,7 @@ from .miwae import *
 from .vq_vae import *
 from .betatc_vae import *
 from .dip_vae import *
+from .vae3d import *
 
 
 # Aliases
@@ -48,5 +49,6 @@ vae_models = {'HVAE':HVAE,
               'FactorVAE':FactorVAE,
               'LogCoshVAE':LogCoshVAE,
               'VanillaVAE':VanillaVAE,
+              'VAE3D':VAE3D,
               'ConditionalVAE':ConditionalVAE,
               'CategoricalVAE':CategoricalVAE}
