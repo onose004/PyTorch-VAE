@@ -80,7 +80,7 @@ class VAEXperiment(pl.LightningModule):
                 f"recons_{self.logger.name}_{self.current_epoch}_data.pt")      
         try:                                                                    
             torch.save(                                                         
-                    np.array(test_input.data.cpu().data), f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
+                    test_input.data, f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
                     f"real_img_{self.logger.name}_{self.current_epoch}_data.pt")
         except:                                                                 
             pass
@@ -171,7 +171,7 @@ class VAEXperiment(pl.LightningModule):
             dataset.targets = dataset.targets[idx]
             dataset.data = dataset.data[idx]
         elif self.params['dataset'] == 'VOL':
-            vol_np = np.load("/Users/ronose/Documents/Lab/Repo/pmat-generator-toolkit/tests/test_volume.npy")
+            vol_np = np.load(self.params['data_path'])
             data = torch.from_numpy(vol_np).float()
             targets = torch.ones(len(data))
             dataset = torch.utils.data.TensorDataset(data, targets)
@@ -220,7 +220,7 @@ class VAEXperiment(pl.LightningModule):
                                                  drop_last=True)
             self.num_val_imgs = len(self.sample_dataloader)
         elif self.params['dataset'] == 'VOL':
-            vol_np = np.load("/Users/ronose/Documents/Lab/Repo/pmat-generator-toolkit/tests/test_volume.npy")
+            vol_np = np.load(self.params['data_path'])
             data = torch.from_numpy(vol_np).float()
             targets = torch.ones(len(data))
             dataset = torch.utils.data.TensorDataset(data, targets)
