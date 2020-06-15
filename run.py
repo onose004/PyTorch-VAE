@@ -1,3 +1,5 @@
+import os
+import shutil
 import yaml
 import argparse
 import numpy as np
@@ -39,7 +41,9 @@ cudnn.benchmark = False
 
 model = vae_models[config['model_params']['name']](**config['model_params'])
 experiment = VAEXperiment(model,
-                          config['exp_params'])
+                          config['exp_params']
+                          )
+
 
 runner = Trainer(default_save_path=f"{tt_logger.save_dir}",
                  min_nb_epochs=1,
@@ -52,4 +56,12 @@ runner = Trainer(default_save_path=f"{tt_logger.save_dir}",
                  **config['trainer_params'])
 
 print(f"======= Training {config['model_params']['name']} =======")
+target_dir = os.path.join(
+        runner.logger.save_dir,
+        runner.logger.name,
+        f"version_{str(runner.logger.experiment.version)}",
+        os.path.basename(args.filename)
+        )
+shutil.copyfile(args.filename, target_dir)
+
 runner.fit(experiment)

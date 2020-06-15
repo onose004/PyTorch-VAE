@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "pytorch-vae"
+version = "0.1.0"
+description = ""
+authors = ["Ryosuke Onose <dev@onose.ws>"]
+
+[tool.poetry.dependencies]
+python = "3.7"
+PyYAML = "5.1.2"
+tensorboard = "2.1.0"
+tensorboardX = "1.6"
+terminado = "0.8.1"
+test-tube = "0.7.0"
+matplotlib = "^3.2.1"
+torch = "1.5.0"
+torchvision = "^0.6.0"
+pytorch-lightning = "0.8.0rc1"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"

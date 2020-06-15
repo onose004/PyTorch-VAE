@@ -24,26 +24,26 @@ class VectorQuantizer(nn.Module):
         self.embedding.weight.data.uniform_(-1 / self.K, 1 / self.K)
 
     def forward(self, latents: Tensor) -> Tensor:
-        latents = latents.permute(0, 2, 3, 1).contiguous()  # [B x D x H x W] -> [B x H x W x D]
+        latents = latents.permute(0, 2, 3, 4, 1).contiguous()  # [B x C x H x W x D] -> [B x H x W x D x C]
         latents_shape = latents.shape
-        flat_latents = latents.view(-1, self.D)  # [BHW x D]
+        flat_latents = latents.view(-1, self.D)  # [BHWD x C x C]
 
         # Compute L2 distance between latents and embedding weights
         dist = torch.sum(flat_latents ** 2, dim=1, keepdim=True) + \
                torch.sum(self.embedding.weight ** 2, dim=1) - \
-               2 * torch.matmul(flat_latents, self.embedding.weight.t())  # [BHW x K]
+               2 * torch.matmul(flat_latents, self.embedding.weight.t())  # [BHWD x K]
 
         # Get the encoding that has the min distance
-        encoding_inds = torch.argmin(dist, dim=1).unsqueeze(1)  # [BHW, 1]
+        encoding_inds = torch.argmin(dist, dim=1).unsqueeze(1)  # [BHWD, 1]
 
         # Convert to one-hot encodings
         device = latents.device
         encoding_one_hot = torch.zeros(encoding_inds.size(0), self.K, device=device)
-        encoding_one_hot.scatter_(1, encoding_inds, 1)  # [BHW x K]
+        encoding_one_hot.scatter_(1, encoding_inds, 1)  # [BHWD x K]
 
         # Quantize the latents
-        quantized_latents = torch.matmul(encoding_one_hot, self.embedding.weight)  # [BHW, D]
-        quantized_latents = quantized_latents.view(latents_shape)  # [B x H x W x D]
+        quantized_latents = torch.matmul(encoding_one_hot, self.embedding.weight)  # [BHWD, C]
+        quantized_latents = quantized_latents.view(latents_shape)  # [B x H x W x D x C]
 
         # Compute the VQ Losses
         commitment_loss = F.mse_loss(quantized_latents.detach(), latents)
@@ -54,7 +54,7 @@ class VectorQuantizer(nn.Module):
         # Add the residue back to the latents
         quantized_latents = latents + (quantized_latents - latents).detach()
 
-        return quantized_latents.permute(0, 3, 1, 2).contiguous(), vq_loss  # [B x D x H x W]
+        return quantized_latents.permute(0, 4, 1, 2, 3).contiguous(), vq_loss  # [B x C x H x W x D]
 
 class ResidualLayer(nn.Module):
 
@@ -62,19 +62,18 @@ class ResidualLayer(nn.Module):
                  in_channels: int,
                  out_channels: int):
         super(ResidualLayer, self).__init__()
-        self.resblock = nn.Sequential(nn.Conv2d(in_channels, out_channels,
+        self.resblock = nn.Sequential(nn.Conv3d(in_channels, out_channels,
                                                 kernel_size=3, padding=1, bias=False),
-                                      nn.ReLU(True),
-                                      nn.Conv2d(out_channels, out_channels,
-                                                kernel_size=1, bias=False),
-                                      nn.ReLU(True),
+                                      nn.ELU(True),
+                                      nn.Conv3d(out_channels, out_channels,
+                                                kernel_size=1, bias=False)
                                       )
 
     def forward(self, input: Tensor) -> Tensor:
         return input + self.resblock(input)
 
 
-class VQVAE(BaseVAE):
+class VQVAE3D(BaseVAE):
 
     def __init__(self,
                  in_channels: int,
@@ -85,7 +84,7 @@ class VQVAE(BaseVAE):
                  img_size: int = 64,
                  res_num: int = 6,
                  **kwargs) -> None:
-        super(VQVAE, self).__init__()
+        super(VQVAE3D, self).__init__()
 
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
@@ -101,7 +100,7 @@ class VQVAE(BaseVAE):
         for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels=h_dim,
+                    nn.Conv3d(in_channels, out_channels=h_dim,
                               kernel_size=4, stride=2, padding=1),
                     nn.ELU())
             )
@@ -109,7 +108,7 @@ class VQVAE(BaseVAE):
 
         modules.append(
             nn.Sequential(
-                nn.Conv2d(in_channels, in_channels,
+                nn.Conv3d(in_channels, in_channels,
                           kernel_size=3, stride=1, padding=1),
                 nn.ELU())
         )
@@ -120,7 +119,7 @@ class VQVAE(BaseVAE):
 
         modules.append(
             nn.Sequential(
-                nn.Conv2d(in_channels, embedding_dim,
+                nn.Conv3d(in_channels, embedding_dim,
                           kernel_size=1, stride=1),
                 nn.ELU())
         )
@@ -135,7 +134,7 @@ class VQVAE(BaseVAE):
         modules = []
         modules.append(
             nn.Sequential(
-                nn.Conv2d(embedding_dim,
+                nn.Conv3d(embedding_dim,
                           hidden_dims[-1],
                           kernel_size=3,
                           stride=1,
@@ -153,7 +152,7 @@ class VQVAE(BaseVAE):
         for i in range(len(hidden_dims) - 1):
             modules.append(
                 nn.Sequential(
-                    nn.ConvTranspose2d(hidden_dims[i],
+                    nn.ConvTranspose3d(hidden_dims[i],
                                        hidden_dims[i + 1],
                                        kernel_size=4,
                                        stride=2,
@@ -163,7 +162,7 @@ class VQVAE(BaseVAE):
 
         modules.append(
             nn.Sequential(
-                nn.ConvTranspose2d(hidden_dims[-1],
+                nn.ConvTranspose3d(hidden_dims[-1],
                                    out_channels=self.in_channels,
                                    kernel_size=4,
                                    stride=2, padding=1),
@@ -178,7 +177,6 @@ class VQVAE(BaseVAE):
         :param input: (Tensor) Input tensor to encoder [N x C x H x W]
         :return: (Tensor) List of latent codes
         """
-
         result = self.encoder(input)
         return [result]
 
@@ -196,7 +194,6 @@ class VQVAE(BaseVAE):
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
         encoding = self.encode(input)[0]
         quantized_inputs, vq_loss = self.vq_layer(encoding)
-
         return [self.decode(quantized_inputs), input, vq_loss]
 
     def loss_function(self,

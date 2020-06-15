@@ -15,12 +15,14 @@ from torch.utils.data import DataLoader
 import numpy as np
 import os
 
+import matplotlib.pyplot as plt
 
 class VAEXperiment(pl.LightningModule):
 
     def __init__(self,
                  vae_model: BaseVAE,
-                 params: dict) -> None:
+                 params: dict
+                 ) -> None:
         super(VAEXperiment, self).__init__()
 
         self.model = vae_model
@@ -39,13 +41,27 @@ class VAEXperiment(pl.LightningModule):
         real_img, labels = batch
         self.curr_device = real_img.device
 
+        track_steps = False
+
+        if track_steps:
+            self.logger.experiment.add_histogram(f"training_epoch_{self.current_epoch:02}/0_input", real_img, batch_idx)
+            encoding = self.model.encode(real_img)[0]
+            self.logger.experiment.add_histogram(f"training_epoch_{self.current_epoch:02}/1_encoding", encoding, batch_idx)
+            quantized_inputs, vq_loss = self.model.vq_layer(encoding)
+            self.logger.experiment.add_histogram(f"training_epoch_{self.current_epoch:02}/2_quantized_inputs", quantized_inputs, batch_idx)
+
+
         results = self.forward(real_img, labels = labels)
+
+        if track_steps:
+            self.logger.experiment.add_histogram(f"training_epoch_{self.current_epoch:02}/3_output", results[0], batch_idx)
+
         train_loss = self.model.loss_function(*results,
                                               M_N = self.params['batch_size']/ self.num_train_imgs,
                                               optimizer_idx=optimizer_idx,
                                               batch_idx = batch_idx)
 
-        self.logger.experiment.log({key: val.item() for key, val in train_loss.items()})
+        self.logger.experiment.log({f"Loss/{key}": val.item() for key, val in train_loss.items()})
 
         return train_loss
 
@@ -67,6 +83,42 @@ class VAEXperiment(pl.LightningModule):
         self.sample_images()
         return {'val_loss': avg_loss, 'log': tensorboard_logs}
 
+
+    @staticmethod
+    def matplotlib_imshow(img, one_channel=False):
+        if one_channel:
+            img = img.mean(dim=0)
+        img = img / 2 + 0.5     # unnormalize
+        npimg = img.numpy()
+        if one_channel:
+            plt.imshow(npimg, cmap="Greys")
+        else:
+            plt.imshow(np.transpose(npimg, (1, 2, 0)))
+
+    @staticmethod
+    def data_grid(data, max_show_batch=4):
+        if data.ndim == 4:
+            nb, nd, nw, nh = data.shape
+        if data.ndim == 5:
+            nb, _, nd, nw, nh = data.shape
+        else:
+            raise ValueError
+            
+        data = np.array(data[0:min(nb, max_show_batch)])
+        
+        if nd > 1:
+            ncols = nd
+            nrows = max_show_batch
+            grid = data.reshape(nrows, ncols, nh, nw).swapaxes(1,2).reshape(1, nh*nrows, nw*ncols)
+            
+        else:
+            ncols = 1
+            nrows = max_show_batch 
+            grid = data.reshape(nrows, ncols, nh, nw).swapaxes(1,2).reshape(1, nh*nrows, nw*ncols)
+            
+        grid = grid / 2 + 0.5     # unnormalize
+        return torch.from_numpy(grid)
+
     def sample_images(self):
         # Get sample reconstruction image
         test_input, test_label = next(iter(self.sample_dataloader))
@@ -74,17 +126,30 @@ class VAEXperiment(pl.LightningModule):
         test_label = test_label.to(self.curr_device)
         recons = self.model.generate(test_input, labels = test_label)
 
+        grid_real = self.data_grid(test_input.data.cpu())
+        self.logger.experiment.add_image("Image/Real", grid_real)
 
-        torch.save(test_label, f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
-                  f"{self.logger.name}_{self.current_epoch}_label.pt")            
-        torch.save(recons.data, f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
-                f"recons_{self.logger.name}_{self.current_epoch}_data.pt")      
-        try:                                                                    
+        grid_recons = self.data_grid(recons.data.cpu())
+        self.logger.experiment.add_image("Image/Reconstruction", grid_recons)
+
+        self.logger.experiment.add_histogram("model/0_input", test_input, self.current_epoch)
+        self.logger.experiment.add_graph(self.model.encoder, test_input)
+        encoding = self.model.encode(test_input)[0]
+        self.logger.experiment.add_histogram("model/1_encoding", encoding, self.current_epoch)
+        quantized_inputs, vq_loss = self.model.vq_layer(encoding)
+        self.logger.experiment.add_histogram("model/2_quantized_inputs", quantized_inputs, self.current_epoch)
+        self.logger.experiment.add_graph(self.model.decoder, quantized_inputs)
+        self.logger.experiment.add_histogram("model/3_output", recons, self.current_epoch)
+
+
+        if False:
+            torch.save(test_label, f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
+                      f"{self.logger.name}_{self.current_epoch}_label.pt")            
+            torch.save(recons.data, f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
+                    f"recons_{self.logger.name}_{self.current_epoch}_data.pt")      
             torch.save(                                                         
                     test_input.data, f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
                     f"real_img_{self.logger.name}_{self.current_epoch}_data.pt")
-        except:                                                                 
-            pass
         # vutils.save_image(recons.data,
         #                   f"{self.logger.save_dir}{self.logger.name}/version_{self.logger.version}/"
         #                   f"recons_{self.logger.name}_{self.current_epoch}.png",
@@ -121,6 +186,7 @@ class VAEXperiment(pl.LightningModule):
         optimizer = optim.Adam(self.model.parameters(),
                                lr=self.params['LR'],
                                weight_decay=self.params['weight_decay'])
+        return optimizer
         optims.append(optimizer)
         # Check if more than 1 optimizer is required (Used for adversarial training)
         try:
@@ -168,9 +234,9 @@ class VAEXperiment(pl.LightningModule):
                              train=True,
                              transform=transform,
                              download=False)
-            idx = (dataset.targets == 3) | (dataset.targets == 5) | (dataset.targets == 8)
-            dataset.targets = dataset.targets[idx]
-            dataset.data = dataset.data[idx]
+            # idx = (dataset.targets == 3) | (dataset.targets == 5) | (dataset.targets == 8)
+            # dataset.targets = dataset.targets[idx]
+            # dataset.data = dataset.data[idx]
         elif self.params['dataset'] == 'VOL':
             vol_np = np.load(self.params['data_path'])
             data = torch.from_numpy(vol_np).float()
@@ -185,10 +251,11 @@ class VAEXperiment(pl.LightningModule):
             raise ValueError('Undefined dataset type')
 
         self.num_train_imgs = len(dataset)
-        return DataLoader(dataset,
+        dl = DataLoader(dataset,
                           batch_size= self.params['batch_size'],
                           shuffle = True,
                           drop_last=True)
+        return dl
 
     @data_loader
     def val_dataloader(self):
@@ -200,7 +267,7 @@ class VAEXperiment(pl.LightningModule):
                                                         transform=transform,
                                                         download=False),
                                                  batch_size= 144,
-                                                 shuffle = True,
+                                                 shuffle = False,
                                                  drop_last=True)
             self.num_val_imgs = len(self.sample_dataloader)
         elif self.params['dataset'] == 'CIFAR10':
@@ -209,7 +276,7 @@ class VAEXperiment(pl.LightningModule):
                                                         transform=transform,
                                                         download=False),
                                                  batch_size= 144,
-                                                 shuffle = True,
+                                                 shuffle = False,
                                                  drop_last=True)
             self.num_val_imgs = len(self.sample_dataloader)
         elif self.params['dataset'] == 'MNIST':
@@ -217,12 +284,12 @@ class VAEXperiment(pl.LightningModule):
                     train=False,
                     transform=transform,
                     download=False)
-            idx = (dataset.targets == 3) | (dataset.targets == 5 ) | (dataset.targets == 8) | (dataset.targets == 1)
-            dataset.targets = dataset.targets[idx]
-            dataset.data = dataset.data[idx]
+            # idx = (dataset.targets == 3) | (dataset.targets == 5 ) | (dataset.targets == 8) | (dataset.targets == 1)
+            # dataset.targets = dataset.targets[idx]
+            # dataset.data = dataset.data[idx]
             self.sample_dataloader =  DataLoader(dataset,
                                                  batch_size= 144,
-                                                 shuffle = True,
+                                                 shuffle = False,
                                                  drop_last=True)
             self.num_val_imgs = len(self.sample_dataloader)
         elif self.params['dataset'] == 'VOL':
@@ -232,7 +299,7 @@ class VAEXperiment(pl.LightningModule):
             dataset = torch.utils.data.TensorDataset(data, targets)
             self.sample_dataloader =  DataLoader(dataset,
                                                  batch_size= 144,
-                                                 shuffle = True,
+                                                 shuffle = False,
                                                  drop_last=True)
             self.num_val_imgs = len(self.sample_dataloader)
         elif self.params['dataset'] == 'MNISTB':
@@ -242,7 +309,7 @@ class VAEXperiment(pl.LightningModule):
             dataset = torch.utils.data.TensorDataset(data, targets)
             self.sample_dataloader =  DataLoader(dataset,
                                                  batch_size= 144,
-                                                 shuffle = True,
+                                                 shuffle = False,
                                                  drop_last=True)
             self.num_val_imgs = len(self.sample_dataloader)
         else:
