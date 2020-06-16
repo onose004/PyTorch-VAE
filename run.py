@@ -6,6 +6,7 @@ import numpy as np
 
 from models import *
 from experiment import VAEXperiment
+from experiment_ad import ADEXperiment
 import torch.backends.cudnn as cudnn
 from pytorch_lightning import Trainer
 from pytorch_lightning.logging import TestTubeLogger
@@ -40,7 +41,11 @@ cudnn.deterministic = True
 cudnn.benchmark = False
 
 model = vae_models[config['model_params']['name']](**config['model_params'])
-experiment = VAEXperiment(model,
+# experiment = VAEXperiment(model,
+#                           config['exp_params']
+#                           )
+
+experiment = ADEXperiment(model,
                           config['exp_params']
                           )
 
